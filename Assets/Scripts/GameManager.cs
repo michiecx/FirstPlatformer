@@ -17,10 +17,14 @@ public class GameManager : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        if (time > 7f)
+        if (time >= 7f)
         {
             door.SetActive(false);
         }
-        time += Time.deltaTime;
+        else
+        {
+            time += Time.deltaTime;
+        }
+        
     }
 }
