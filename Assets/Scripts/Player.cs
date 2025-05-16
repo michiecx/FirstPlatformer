@@ -1,49 +1,63 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using JetBrains.Annotations;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using static UnityEditor.Timeline.TimelinePlaybackControls;
 
 public class Player : MonoBehaviour
 {
+    [SerializeField] private float speed = 5f;
+    [SerializeField] private float jumpForce = 7f;
+    [SerializeField] private CharacterBase characterBase;
+    [SerializeField] private Animator animator;
     private Rigidbody2D rb2d;
     private PlayerController playerController;
-    private float speed = 5f;
-    private Vector2 currentContextValue;
-    private bool onStairs = false;
-    private float jumpForse = 2f;
-    private bool isGrounded = true;
+    private Vector2 currentDirection;
+    private bool isStairs = false;
+    private int currentCountStairs = 0;
+    private int maxHealth = 10;
+    private int currentHealth;
+
+    [SerializeField] private Transform respawnPoint;
 
     private void Awake()
     {
         rb2d = GetComponent<Rigidbody2D>();
         playerController = new PlayerController();
-        playerController.Player.Jump.performed += _ => Jump(_);
         playerController.Player.Move.performed += _ => Move(_);
+        playerController.Player.Move.canceled += _ => EndMove(_);
+        playerController.Player.Jump.performed += _ => Jump(_);
     }
 
-    // Start is called before the first frame update
-    void Start()
+    private void Start()
     {
-        
+        currentHealth = maxHealth;
+
+        if (characterBase.Example == false)
+        {
+            characterBase.Example = true;
+        }
     }
 
-    // Update is called once per frame
-    void Update()
+    private void Update()
     {
+        UpdateAnimations();
+        //Debug.Log(!characterBase.IsGrounded && currentDirection.y <= 0f);
     }
 
     private void FixedUpdate()
     {
-        if (playerController.Player.Move.phase != InputActionPhase.Waiting)
+        if (!isStairs)
         {
-            if (onStairs == false)
-            {
-                currentContextValue.y = 0;
-            }
-            rb2d.MovePosition(rb2d.position + currentContextValue * speed * Time.fixedDeltaTime);
-
+            rb2d.gravityScale = 1;
+            rb2d.velocity = new Vector2(currentDirection.x * speed, rb2d.velocity.y);
+        }
+        else
+        {
+            rb2d.gravityScale = 0;
+            rb2d.velocity = new Vector2(currentDirection.x * speed, currentDirection.y * speed);
         }
     }
 
@@ -57,54 +71,101 @@ public class Player : MonoBehaviour
         playerController.Player.Disable();
     }
 
-    private void OnTriggerEnter2D(Collider2D collision)
+    private void Move(InputAction.CallbackContext context)
     {
-        if (collision.gameObject.tag == "Stairs")
-        {
-            onStairs = true;
-            //rb2d.gravityScale = 0; отключение гравитации
-        }
-        if (collision.gameObject.layer == LayerMask.NameToLayer("Stairs"))
-        {
-            onStairs = true;
-        }
-       
+        currentDirection = context.ReadValue<Vector2>();
 
-    }
-
-    private void OnTriggerExit2D(Collider2D collision)
-    {
-        if (collision.gameObject.tag == "Stairs")
+        if (currentDirection.x > 0)
         {
-            onStairs = false;
+            gameObject.transform.rotation = new Quaternion(0, 0, 0, 0);
         }
-
-        if (collision.gameObject.layer == LayerMask.NameToLayer("Stairs"))
+        else
         {
-            onStairs = false;
+            gameObject.transform.rotation = new Quaternion(0, 180, 0, 0);
         }
     }
 
-    private void OnCollisionEnter2D(Collision2D collision)
+    private void EndMove(InputAction.CallbackContext context)
     {
-        if (collision.gameObject.layer == LayerMask.NameToLayer("Platform"))
-        {
-            isGrounded = true;
-        }
+        currentDirection = Vector2.zero;
     }
 
     private void Jump(InputAction.CallbackContext context)
     {
-        if (context.phase != InputActionPhase.Waiting && isGrounded == true )
+        if (characterBase.IsGrounded)
         {
-            rb2d.AddForce(Vector2.up * jumpForse, ForceMode2D.Impulse);
-            isGrounded = false;
+            rb2d.velocity = new Vector2(rb2d.velocity.x, jumpForce);
         }
     }
 
-    private void Move(InputAction.CallbackContext context)
+    private void UpdateAnimations()
     {
-        Debug.Log(context);
-        currentContextValue = context.ReadValue<Vector2>();
+        animator.SetBool("Fall", !characterBase.IsGrounded && currentDirection.y <= 0 && !isStairs);
+        animator.SetBool("Run", characterBase.IsGrounded && currentDirection.x != 0);
+        animator.SetBool("Jump", !characterBase.IsGrounded && rb2d.velocity.y > 0);
+    }
+
+    private void OnTriggerEnter2D(Collider2D collision)
+    {
+        if (collision.gameObject.layer == LayerMask.NameToLayer("Stairs"))
+        {
+            currentCountStairs++;
+            isStairs = true;
+            animator.Play("Character1Run");
+
+        }
+        else if (collision.gameObject.tag == "WinPlace")
+        {
+            Debug.Log("You win!");
+        }
+       
+    }
+
+    private void OnTriggerExit2D(Collider2D collision)
+    {
+        if (collision.gameObject.layer == LayerMask.NameToLayer("Stairs"))
+        {
+            currentCountStairs--;
+
+            if (currentCountStairs == 0)
+            {
+                isStairs = false;
+            }
+        }
+    }
+
+    public void TakeDamage(int amount)
+    {
+        if (currentHealth - amount > 0)
+        {
+            currentHealth -= amount;
+        }
+        else
+        {
+            Die();
+        }
+
+    }
+
+    private void Die()
+    {
+        Debug.Log("Player is dead");
+        playerController.Player.Disable();
+        rb2d.velocity = Vector2.zero;
+        rb2d.isKinematic = true;
+        GetComponent<Collider2D>().enabled = false;
+
+        Invoke("Respawn", 5f);
+    }
+
+
+    private void Respawn()
+    {
+        currentHealth = maxHealth;
+        transform.position = respawnPoint.position;
+        rb2d.isKinematic = false;
+        GetComponent<Collider2D>().enabled = true;
+        playerController.Player.Enable();
+        animator.Play("Idle");
     }
 }
